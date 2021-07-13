@@ -56,7 +56,8 @@ class systolicSpec extends ChiselFlatSpec {
   behavior of "systolicSpec"
 
   it should "array excellently" in {
-    chisel3.iotesters.Driver.execute(Array("--fint-write-vcd", "--backend-name", "verilator"), () => new systolic(2)) { c =>
+
+    chisel3.iotesters.Driver.execute(Array("--backend-name", "verilator"), () => new systolic(2)) { c =>
       new systolicPeekPokeTester(c)
     } should be(true)
   }

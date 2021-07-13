@@ -2,7 +2,7 @@
 
 package systolic
 
-//import chisel3._
+import chisel3._
 import chisel3.iotesters.{ChiselFlatSpec, Driver, PeekPokeTester}
 
 /**
@@ -20,14 +20,14 @@ class macPeekPokeTester(c: mac) extends PeekPokeTester(c)  {
   var init_counter = 0
   var curr_output = 0
   var prev_output = 0
-  poke(c.io.rst, 1)
+  poke(c.io.init, 1)
   step(1)
   for {
     i <- 1 until 10
     j <- 1 until 10
   } {
     poke(c.io.init, (init_counter % 3 == 0))
-    poke(c.io.rst, 0)
+    poke(c.io.init, 0)
     poke(c.io.a, i)
     poke(c.io.b, j)
     step(1)
