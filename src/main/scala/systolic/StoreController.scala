@@ -4,7 +4,7 @@ import chipsalliance.rocketchip.config.Parameters
 import chisel3.util._
 import chisel3._
 import chisel3.internal.firrtl.Width
-import freechips.rocketchip.rocket.{HellaCacheIO, M_XRD, M_XWR}
+import freechips.rocketchip.rocket.{HellaCacheReq, HellaCacheResp, M_XRD, M_XWR}
 import freechips.rocketchip.tile._
 
 class StoreReq(val dim: Int, val a_w: Width) extends Bundle {
@@ -15,13 +15,14 @@ class StoreReq(val dim: Int, val a_w: Width) extends Bundle {
 
 class StoreController(val dim: Int, val d_n:Int, val a_w: Width)(implicit p: Parameters) extends Module{
   val io = IO(new Bundle() {
-    val memIO = new HellaCacheIO
+    val memReq = Decoupled(new HellaCacheReq())
+    val memResp = Flipped(Valid(new HellaCacheResp()))
     val cmd = Flipped(Decoupled(new StoreReq(dim, a_w)))
     val outreg = Flipped(new OutRegBankReadIO(dim, d_n))
     val complete = Output(Bool())
   })
 
-  val waiting_for_command :: storing_mem :: Nil = Enum(3)
+  val waiting_for_command :: storing_mem :: Nil = Enum(2)
   val state = RegInit(waiting_for_command)
   io.cmd.ready := (state === waiting_for_command)
   val row = RegInit(dim.U)
@@ -34,21 +35,26 @@ class StoreController(val dim: Int, val d_n:Int, val a_w: Width)(implicit p: Par
   val load_a = RegInit(false.B)
   val read = RegInit(0.U((dim*dim).W))
 
-  io.memIO.req.valid := ShiftRegister(state===storing_mem && !(last_row && last_column), 1)
-  io.memIO.req.bits.addr := ShiftRegister(addr + row_counter*col + col_counter, 1)
-  io.memIO.req.bits.tag := ShiftRegister(row_counter*col + col_counter, 1)
-  io.memIO.req.bits.cmd := M_XWR // perform a load (M_XWR for stores)
-  io.memIO.req.bits.size := log2Ceil(8).U
-  io.memIO.req.bits.signed := false.B
-  io.memIO.req.bits.data := io.outreg.resp.data
-  io.memIO.req.bits.phys := false.B
+  io.memReq.bits.no_alloc := true.B
+  io.memReq.bits.mask := false.B
+  io.memReq.bits.no_xcpt := true.B
+  io.memReq.bits.dprv := 0.U
+
+  io.memReq.valid := ShiftRegister(state===storing_mem && !(last_row && last_column), 1)
+  io.memReq.bits.addr := ShiftRegister(addr + row_counter*col + col_counter, 1)
+  io.memReq.bits.tag := ShiftRegister(row_counter*col + col_counter, 1)
+  io.memReq.bits.cmd := M_XWR // perform a load (M_XWR for stores)
+  io.memReq.bits.size := log2Ceil(8).U
+  io.memReq.bits.signed := false.B
+  io.memReq.bits.data := io.outreg.resp.data
+  io.memReq.bits.phys := false.B
 
   io.complete := (state =/= storing_mem)
 
   io.outreg.req.row := row_counter
   io.outreg.req.col := col_counter
 
-  when(io.memIO.req.fire()){
+  when(io.memReq.fire()){
     read := read+1.U
 
   }
@@ -56,13 +62,9 @@ class StoreController(val dim: Int, val d_n:Int, val a_w: Width)(implicit p: Par
     read := 0.U
   }
 
-  when(io.memIO.req.fire()) {
-    col_counter := Mux(last_column, 0.U, col_counter+1.U)
-    row_counter := Mux(last_column, row_counter+1.U, row_counter)
-    when(last_row && last_column){
-      row_counter := 0.U
-    }
-  }
+  col_counter := Mux(io.memReq.fire(), Mux(last_column, 0.U, col_counter+1.U), col_counter)
+  row_counter := Mux(last_column && io.memReq.fire(), Mux(last_row, 0.U, row_counter+1.U), row_counter)
+
   switch(state){
     is(waiting_for_command){
       when(io.cmd.fire()) {

@@ -4,7 +4,7 @@ import chipsalliance.rocketchip.config.Parameters
 import chisel3.util._
 import chisel3._
 import chisel3.internal.firrtl.Width
-import freechips.rocketchip.rocket.{HellaCacheIO, M_XRD}
+import freechips.rocketchip.rocket.{HellaCacheReq, HellaCacheResp, M_XRD}
 import freechips.rocketchip.tile._
 
 class LoadReq(val dim: Int, val numbank: Int, val a_w: Width) extends Bundle {
@@ -15,15 +15,16 @@ class LoadReq(val dim: Int, val numbank: Int, val a_w: Width) extends Bundle {
 
 class LoadController(val dim: Int, val d_n:Int, val numbank: Int, val a_w: Width)(implicit p: Parameters) extends Module{
   val io = IO(new Bundle() {
-    val memIO = new HellaCacheIO
+    val memReq = Decoupled(new HellaCacheReq())
+    val memResp = Flipped(Valid(new HellaCacheResp()))
     val cmd = Flipped(Decoupled(new LoadReq(dim, numbank, a_w)))
     val regbank = Valid(new RegBankLoadReq(dim, d_n))
     val complete = Output(Bool())
   })
-  val rowLut = VecInit((for (i <- 0 until dim*dim) yield (i%dim).U))
-  val colLut = VecInit((for (i <- 0 until dim*dim) yield (i - (i%dim)*dim).U))
+  val rowLut = VecInit((for (i <- 0 until dim*dim) yield (i/dim).U))
+  val colLut = VecInit((for (i <- 0 until dim*dim) yield (i%dim).U))
 
-  val waiting_for_command :: loading_mem :: exec :: Nil = Enum(4)
+  val waiting_for_command :: loading_mem :: exec :: Nil = Enum(3)
   val state = RegInit(waiting_for_command)
   io.cmd.ready := (state === waiting_for_command)
   val row = RegInit(dim.U)
@@ -35,41 +36,50 @@ class LoadController(val dim: Int, val d_n:Int, val numbank: Int, val a_w: Width
   val last_row = row_counter===dim.U-1.U
   val read = RegInit(0.U((dim*dim).W))
 
-  io.memIO.req.valid := state===loading_mem && !(last_row && last_column)
-  io.memIO.req.bits.addr := addr + row_counter*col + col_counter
-  io.memIO.req.bits.tag := row_counter*col + col_counter
-  io.memIO.req.bits.cmd := M_XRD // perform a load (M_XWR for stores)
-  io.memIO.req.bits.size := log2Ceil(8).U
-  io.memIO.req.bits.signed := false.B
-  io.memIO.req.bits.data := 0.U // we're not performing any stores...
-  io.memIO.req.bits.phys := false.B
-  io.regbank.valid := io.memIO.resp.fire()
+  io.memReq.bits.no_alloc := true.B
+  io.memReq.bits.mask := false.B
+  io.memReq.bits.no_xcpt := true.B
+  io.memReq.bits.dprv := 0.U
+
+
+//  io.memIO.req.bits.no_alloc :=
+  io.memReq.valid := state===loading_mem && !(last_row && last_column)
+  io.memReq.bits.addr := addr + row_counter*col + col_counter
+  io.memReq.bits.tag := row_counter*col + col_counter
+  io.memReq.bits.cmd := M_XRD // perform a load (M_XWR for stores)
+  io.memReq.bits.size := log2Ceil(8).U
+  io.memReq.bits.signed := false.B
+  io.memReq.bits.data := 0.U // we're not performing any stores...
+  io.memReq.bits.phys := false.B
+
+  io.regbank.valid := io.memResp.fire()
+  io.regbank.bits.row := rowLut(io.memResp.bits.tag)
+  io.regbank.bits.col := colLut(io.memResp.bits.tag)
+  io.regbank.bits.data := io.memResp.bits.data
+
   io.complete := (read === row*col)
 
-  when(io.memIO.resp.fire()){
+  when(io.memResp.fire()){
     read := read+1.U
-    io.regbank.bits.row := rowLut(io.memIO.resp.bits.tag)
-    io.regbank.bits.col := colLut(io.memIO.resp.bits.tag)
-    io.regbank.bits.data := io.memIO.resp.bits.data
   }
   when(io.complete){
     read := 0.U
   }
 
-  when(io.memIO.req.fire()) {
+  when(io.memReq.fire()) {
     col_counter := Mux(last_column, 0.U, col_counter+1.U)
     row_counter := Mux(last_column, row_counter+1.U, row_counter)
     when(last_row && last_column){
       row_counter := 0.U
     }
   }
+  row := Mux(io.cmd.fire(), io.cmd.bits.row, row)
+  col := Mux(io.cmd.fire(), io.cmd.bits.col, col)
+  addr := Mux(io.cmd.fire(), io.cmd.bits.address, addr)
   switch(state){
     is(waiting_for_command){
       when(io.cmd.fire()) {
         state := loading_mem
-        row := io.cmd.bits.row
-        col := io.cmd.bits.col
-        addr := io.cmd.bits.address
       }
     }
     is(loading_mem){

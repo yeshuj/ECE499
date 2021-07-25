@@ -12,8 +12,8 @@ import freechips.rocketchip.tile._
 class ExecuteController(val dim: Int, val d_n:Int, val numbank: Int, val a_w: Width)(implicit p: Parameters) extends Module{
   val io = IO(new Bundle() {
     val startExec = Input(Bool())
-    val regbankreq = Decoupled(new RegBankReadReq(d_n))
-    val regbankreqTrans = Decoupled(new RegBankReadReq(d_n))
+    val regbankreq = Valid(new RegBankReadReq(d_n))
+    val regbankreqTrans = Valid(new RegBankReadReq(d_n))
   })
 
   val waiting_for_command :: transpose :: exec :: Nil = Enum(3)
@@ -22,7 +22,8 @@ class ExecuteController(val dim: Int, val d_n:Int, val numbank: Int, val a_w: Wi
   val counter = Counter(Range(0, dim, 1), state =/= waiting_for_command)
   io.regbankreq.valid := state === exec
   io.regbankreqTrans.valid := state === transpose
-
+  io.regbankreq.bits.row := counter._1
+  io.regbankreqTrans.bits.row := counter._1
   switch(state){
     is(waiting_for_command){
       when(io.startExec) {
@@ -30,13 +31,11 @@ class ExecuteController(val dim: Int, val d_n:Int, val numbank: Int, val a_w: Wi
       }
     }
     is(transpose){
-      io.regbankreqTrans.bits.row := counter._1
       when(counter._2){
         state := exec
       }
     }
     is(exec){
-      io.regbankreq.bits.row := counter._1
       when(counter._2){
         state:= waiting_for_command
       }

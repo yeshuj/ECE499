@@ -42,9 +42,7 @@ class RegBank(val dim: Int, val d_n: Int) extends Module {
   when(io.load.fire()){
     mem(io.load.bits.row)(io.load.bits.col) := io.load.bits.data
   }
-  when(io.read.req.fire()){
-    io.read.resp.valid := true.B
-    io.read.resp.bits.row := io.read.req.bits.row
-    io.read.resp.bits.data := mem(io.read.req.bits.row)
-  }
+  io.read.resp.valid := io.read.req.fire()
+  io.read.resp.bits.row := io.read.req.bits.row
+  io.read.resp.bits.data := mem(io.read.req.bits.row)
 }
