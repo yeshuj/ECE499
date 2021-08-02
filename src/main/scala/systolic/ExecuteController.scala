@@ -12,33 +12,33 @@ import freechips.rocketchip.tile._
 class ExecuteController(val dim: Int, val d_n:Int, val numbank: Int, val a_w: Width)(implicit p: Parameters) extends Module{
   val io = IO(new Bundle() {
     val startExec = Input(Bool())
-    val regbankreq = Valid(new RegBankReadReq(d_n))
-    val regbankreqTrans = Valid(new RegBankReadReq(d_n))
+    val regbankreq = Valid(new RegBankSysReq(dim, d_n))
+    val regbankreqTrans = Valid(new RegBankSysReq(dim, d_n))
+    val complete = Output(Bool())
   })
-
   val waiting_for_command :: transpose :: exec :: Nil = Enum(3)
   val state = RegInit(waiting_for_command)
-
+  io.complete := state === waiting_for_command
   val counter = Counter(Range(0, dim, 1), state =/= waiting_for_command)
+
   io.regbankreq.valid := state === exec
   io.regbankreqTrans.valid := state === transpose
   io.regbankreq.bits.row := counter._1
   io.regbankreqTrans.bits.row := counter._1
+  io.regbankreq.bits.data := VecInit(Seq.fill(dim)(0.U(d_n.W)))
+  io.regbankreqTrans.bits.data := VecInit(Seq.fill(dim)(0.U(d_n.W)))
+  io.regbankreq.bits.write := false.B
+  io.regbankreqTrans.bits.write := false.B
+
   switch(state){
     is(waiting_for_command){
-      when(io.startExec) {
-        state := transpose
-      }
+      state := Mux(io.startExec, transpose, state)
     }
     is(transpose){
-      when(counter._2){
-        state := exec
-      }
+      state := Mux(counter._2, exec, state)
     }
     is(exec){
-      when(counter._2){
-        state:= waiting_for_command
-      }
+      state:= Mux(counter._2, waiting_for_command, state)
     }
   }
 }

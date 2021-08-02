@@ -6,8 +6,8 @@ import chisel3.util._
 
 class TransposeReg(val dim: Int, val d_n: Int) extends Module {
   val io = IO(new Bundle{
-    val read = Flipped(new RegBankReadIO(dim, d_n))
-    val load = Flipped(Valid(new RegBankReadResp(dim, d_n)))
+    val sys = Flipped(new RegBankSystolicIO(dim, d_n))
+    val load = Flipped(Valid(new RegBankSysResp(dim, d_n)))
   })
   val mem = Reg(Vec(dim, Vec(dim, UInt(d_n.W))))
 
@@ -16,7 +16,7 @@ class TransposeReg(val dim: Int, val d_n: Int) extends Module {
       mem(i)(io.load.bits.row) := io.load.bits.data(i)
     }
   }
-  io.read.resp.valid := io.read.req.fire()
-  io.read.resp.bits.row := io.read.req.bits.row
-  io.read.resp.bits.data := mem(io.read.req.bits.row)
+  io.sys.out.valid := io.sys.cmd.fire() && !io.sys.cmd.bits.write
+  io.sys.out.bits.row := io.sys.cmd.bits.row
+  io.sys.out.bits.data := mem(io.sys.cmd.bits.row)
 }

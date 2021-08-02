@@ -4,45 +4,59 @@ import chisel3.util._
 import chisel3._
 
 // Interfaces for compute instructions
-class RegBankReadReq(val dim: Int) extends Bundle {
+class RegBankSysResp(val dim: Int, val d_n:Int) extends Bundle {
+  val data = Vec(dim, UInt(d_n.W))
   val row = UInt(dim.W)
 }
-class RegBankReadResp(val dim: Int, val d_n:Int) extends Bundle {
+class RegBankSysReq(val dim: Int, val d_n:Int) extends Bundle {
   val row = UInt(dim.W)
   val data = Vec(dim, UInt(d_n.W))
+  val write = Bool()
 }
-class RegBankReadIO(val dim: Int, val d_n: Int) extends Bundle {
-  val req = Valid(new RegBankReadReq(dim))
-  val resp = Flipped(Valid(new RegBankReadResp(dim, d_n)))
+//class RegBankReadIO(val dim: Int, val d_n: Int) extends Bundle {
+//  val req = Valid(new RegBankReadReq(dim))
+//  val resp = Flipped(Valid(new RegBankReadResp(dim, d_n)))
+//}
+//// Interfaces for load instructions
+//class RegBankSystolicRes(val dim: Int, val d_n: Int) extends Bundle {
+//  val row = UInt(dim.W)
+//  val data = Vec(dim, UInt(d_n.W))
+//}
+class RegBankSystolicIO(val dim: Int, val d_n: Int) extends Bundle {
+  val cmd = Valid(new RegBankSysReq(dim, d_n))
+  val out = Flipped(Valid(new RegBankSysResp(dim, d_n)))
 }
-//
-//class RegBankConfigSetup(val dim: Int, val d_n: Int) extends Bundle {
-//  val row = UInt(dim.W)
-//  val col = UInt(dim.W)
-//}
-//class RegBankConfigSetupInfo(val dim: Int, val d_n: Int) extends Bundle {
-//  val row = UInt(dim.W)
-//  val col = UInt(dim.W)
-//}
 
-// Interfaces for load instructions
-class RegBankLoadReq(val dim: Int, val d_n: Int) extends Bundle {
+// Interfaces for D1 memory
+class RegBankMemReq(val dim: Int, val d_n: Int) extends Bundle {
   val row = UInt(dim.W)
   val col = UInt(dim.W)
   val data = UInt(d_n.W)
+  val write = Bool()
+}
+class RegBankMemResp(val d_n: Int) extends Bundle{
+  val data = UInt(d_n.W)
+}
+class RegBankMemIO(val dim: Int, val d_n: Int) extends Bundle {
+  val cmd = Valid(new RegBankMemReq(dim, d_n))
+  val out = Flipped(Valid(new RegBankMemResp(d_n)))
 }
 
 class RegBank(val dim: Int, val d_n: Int) extends Module {
   val io = IO(new Bundle{
-    val read = Flipped(new RegBankReadIO(dim, d_n))
-    val load = Flipped(Valid(new RegBankLoadReq(dim, d_n)))
+    val sys = Flipped(new RegBankSystolicIO(dim, d_n))
+    val mem = Flipped(new RegBankMemIO(dim, d_n))
   })
   val mem = Reg(Vec(dim, Vec(dim, UInt(d_n.W))))
 
-  when(io.load.fire()){
-    mem(io.load.bits.row)(io.load.bits.col) := io.load.bits.data
+  io.sys.out.bits.row := io.sys.cmd.bits.row
+  io.sys.out.valid := io.sys.cmd.fire() && !io.sys.cmd.bits.write
+  io.sys.out.bits.data := mem(io.sys.cmd.bits.row)
+  io.mem.out.valid := io.mem.cmd.fire() && !io.mem.cmd.bits.write
+  io.mem.out.bits.data := mem(io.mem.cmd.bits.row)(io.mem.cmd.bits.col)
+  when(io.sys.cmd.fire() && io.sys.cmd.bits.write){
+    mem(io.sys.cmd.bits.row) := io.sys.cmd.bits.data
+  }.elsewhen(io.mem.cmd.fire() && io.mem.cmd.bits.write){
+    mem(io.mem.cmd.bits.row)(io.mem.cmd.bits.col) := io.mem.cmd.bits.data
   }
-  io.read.resp.valid := io.read.req.fire()
-  io.read.resp.bits.row := io.read.req.bits.row
-  io.read.resp.bits.data := mem(io.read.req.bits.row)
 }

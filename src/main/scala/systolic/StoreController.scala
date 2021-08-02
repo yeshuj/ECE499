@@ -18,7 +18,7 @@ class StoreController(val dim: Int, val d_n:Int, val a_w: Width)(implicit p: Par
     val memReq = Decoupled(new HellaCacheReq())
     val memResp = Flipped(Valid(new HellaCacheResp()))
     val cmd = Flipped(Decoupled(new StoreReq(dim, a_w)))
-    val outreg = Flipped(new OutRegBankReadIO(dim, d_n))
+    val regbank = new RegBankMemIO(dim, d_n)
     val complete = Output(Bool())
   })
 
@@ -46,13 +46,16 @@ class StoreController(val dim: Int, val d_n:Int, val a_w: Width)(implicit p: Par
   io.memReq.bits.cmd := M_XWR // perform a load (M_XWR for stores)
   io.memReq.bits.size := log2Ceil(8).U
   io.memReq.bits.signed := false.B
-  io.memReq.bits.data := io.outreg.resp.data
+  io.memReq.bits.data := io.regbank.out.bits.data
   io.memReq.bits.phys := false.B
 
   io.complete := (state =/= storing_mem)
 
-  io.outreg.req.row := row_counter
-  io.outreg.req.col := col_counter
+  io.regbank.cmd.valid := state===storing_mem && !(last_row && last_column)
+  io.regbank.cmd.bits.row := row_counter
+  io.regbank.cmd.bits.col := col_counter
+  io.regbank.cmd.bits.data := 0.U
+  io.regbank.cmd.bits.write := false.B
 
   when(io.memReq.fire()){
     read := read+1.U

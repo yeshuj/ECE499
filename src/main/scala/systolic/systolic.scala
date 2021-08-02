@@ -20,11 +20,11 @@ class systolic_d(val dim: Int, val d_n: Int) extends Module {
 
   val io = IO(new Bundle(){
     val calc           = Input(Bool())
-    val in_A          = Input(new RegBankReadResp(dim, d_n))
-    val in_B          = Input(new RegBankReadResp(dim, d_n))
-    val out           = Valid(new OutRegBankLoadReq(dim, d_n))
+    val in_A          = Input(new RegBankSysResp(dim, d_n))
+    val in_B          = Input(new RegBankSysResp(dim, d_n))
+    val out           = Valid(new RegBankSysReq(dim, d_n))
   })
-  val calc_r = RegInit(0.U(d_n.W))
+  val calc_r = RegInit(0.U)
   calc_r := io.calc
   val init = calc_r ^ io.calc
 //  val io = IO(new systolicBundle(2))
@@ -32,19 +32,19 @@ class systolic_d(val dim: Int, val d_n: Int) extends Module {
   for (i <- 0 until dim; j <- 0 until dim) {
     if (i != 0) {
       sysArr(i)(j).b := sysArr(i - 1)(j).out_b
+      sysArr(i)(j).in_Data := sysArr(i-1)(j).out_Data
+      sysArr(i)(j).in_Valid := sysArr(i-1)(j).out_Valid
     } else {
       sysArr(i)(j).b := ShiftRegister(io.in_B.data(j), j)
+      sysArr(i)(j).in_Data := 0.U
+      sysArr(i)(j).in_Valid := false.B
     }
 
     if (j != 0) {
       sysArr(i)(j).a := sysArr(i)(j - 1).out_a
       sysArr(i)(j).init := sysArr(i)(j - 1).out_init
-      sysArr(i)(j).in_Data := sysArr(i)(j - 1).out_Data
-      sysArr(i)(j).in_Valid := sysArr(i)(j - 1).out_Valid
     } else {
       sysArr(i)(j).a := ShiftRegister(io.in_A.data(i), i)
-      sysArr(i)(j).in_Data := 0.U
-      sysArr(i)(j).in_Valid := false.B
       if(i != 0) {
         sysArr(i)(j).init := sysArr(i - 1)(j).out_init
       } else {
@@ -53,8 +53,14 @@ class systolic_d(val dim: Int, val d_n: Int) extends Module {
 //        sysArr(i)(j).left_bub := 0.B
     }
   }
-  io.out.bits.data := VecInit((for (i <- 0 until dim) yield sysArr(i)(dim-1).out_Data))
-  io.out.valid := (for (i <- 0 until dim) yield sysArr(i)(dim-1).out_Valid).toArray.reduce(_||_)
+  for (i <- 0 until dim){
+    io.out.bits.data(i) := ShiftRegister(sysArr(dim-1)(i).out_Data, dim-1-i)
+  }
+  val counter = Counter(Range(0, dim, 1), sysArr(dim-1)(dim-1).out_Valid)
+  io.out.bits.row := counter._1
+  io.out.bits.write := true.B
+//  io.out.bits.data := VecInit((for (i <- 0 until dim) yield sysArr(i)(dim-1).out_Data))
+  io.out.valid := sysArr(dim-1)(dim-1).out_Valid
 }
 
 class systolic (size: Int) extends Module {
