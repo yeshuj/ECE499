@@ -28,7 +28,7 @@ class systolic_d(val dim: Int, val d_n: Int) extends Module {
   calc_r := io.calc
   val init = calc_r ^ io.calc
 //  val io = IO(new systolicBundle(2))
-  val sysArr = (for (i <- 0 until dim) yield ((for (j <- 0 until dim) yield Module(new mac()).io)))
+  val sysArr = (for (i <- 0 until dim) yield ((for (j <- 0 until dim) yield Module(new mac(d_n)).io)))
   for (i <- 0 until dim; j <- 0 until dim) {
     if (i != 0) {
       sysArr(i)(j).b := sysArr(i - 1)(j).out_b
@@ -64,34 +64,34 @@ class systolic_d(val dim: Int, val d_n: Int) extends Module {
   io.out.valid := sysArr(dim-1)(dim-1).out_Valid
 }
 
-class systolic (size: Int) extends Module {
-  val io = IO(new systolicBundle(size))
-  withReset(io.rst) {
-    val sysArr = (for (i <- 0 until size) yield ((for (j <- 0 until size) yield Module(new mac()).io)))
-    for (i <- 0 until size; j <- 0 until size) {
-      if (i != 0) {
-        sysArr(i)(j).b := sysArr(i - 1)(j).out_b
-      } else {
-        sysArr(i)(j).b := ShiftRegister(io.B(j), j)
-      }
-
-      if (j != 0) {
-        sysArr(i)(j).a := sysArr(i)(j - 1).out_a
-        sysArr(i)(j).init := sysArr(i)(j - 1).out_init
-        sysArr(i)(j).in_Data := sysArr(i)(j - 1).out_Data
-        sysArr(i)(j).in_Valid := sysArr(i)(j - 1).out_Valid
-      } else {
-        sysArr(i)(j).a := ShiftRegister(io.A(i), i)
-        sysArr(i)(j).in_Data := 0.U
-        sysArr(i)(j).in_Valid := false.B
-        if(i != 0) {
-          sysArr(i)(j).init := sysArr(i - 1)(j).out_init
-        } else {
-          sysArr(i)(j).init := io.init
-        }
-      }
-    }
-    io.Result := VecInit((for (i <- 0 until size) yield sysArr(i)(size-1).out_Data))
-    io.Valid := (for (i <- 0 until size) yield sysArr(i)(size-1).out_Valid).toArray
-  }
-}
+//class systolic (size: Int) extends Module {
+//  val io = IO(new systolicBundle(size))
+//  withReset(io.rst) {
+//    val sysArr = (for (i <- 0 until size) yield ((for (j <- 0 until size) yield Module(new mac()).io)))
+//    for (i <- 0 until size; j <- 0 until size) {
+//      if (i != 0) {
+//        sysArr(i)(j).b := sysArr(i - 1)(j).out_b
+//      } else {
+//        sysArr(i)(j).b := ShiftRegister(io.B(j), j)
+//      }
+//
+//      if (j != 0) {
+//        sysArr(i)(j).a := sysArr(i)(j - 1).out_a
+//        sysArr(i)(j).init := sysArr(i)(j - 1).out_init
+//        sysArr(i)(j).in_Data := sysArr(i)(j - 1).out_Data
+//        sysArr(i)(j).in_Valid := sysArr(i)(j - 1).out_Valid
+//      } else {
+//        sysArr(i)(j).a := ShiftRegister(io.A(i), i)
+//        sysArr(i)(j).in_Data := 0.U
+//        sysArr(i)(j).in_Valid := false.B
+//        if(i != 0) {
+//          sysArr(i)(j).init := sysArr(i - 1)(j).out_init
+//        } else {
+//          sysArr(i)(j).init := io.init
+//        }
+//      }
+//    }
+//    io.Result := VecInit((for (i <- 0 until size) yield sysArr(i)(size-1).out_Data))
+//    io.Valid := (for (i <- 0 until size) yield sysArr(i)(size-1).out_Valid).toArray
+//  }
+//}

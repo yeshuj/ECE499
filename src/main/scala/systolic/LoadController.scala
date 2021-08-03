@@ -42,10 +42,10 @@ class LoadController(val dim: Int, val d_n:Int, val numbank: Int, val a_w: Width
   io.memReq.bits.dprv := 0.U
 
   io.memReq.valid := state===loading_mem && ! ShiftRegister(last_row && last_column, 1)
-  io.memReq.bits.addr := addr + (row_counter*col + col_counter)*4.U
+  io.memReq.bits.addr := addr + (row_counter*col + col_counter)*(d_n/8).U
   io.memReq.bits.tag := row_counter*col + col_counter
   io.memReq.bits.cmd := M_XRD // perform a load (M_XWR for stores)
-  io.memReq.bits.size := log2Ceil(4).U
+  io.memReq.bits.size := log2Ceil(d_n/8).U
   io.memReq.bits.signed := false.B
   io.memReq.bits.data := 0.U // we're not performing any stores...
   io.memReq.bits.phys := false.B

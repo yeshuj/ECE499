@@ -41,10 +41,10 @@ class StoreController(val dim: Int, val d_n:Int, val a_w: Width)(implicit p: Par
   io.memReq.bits.dprv := 0.U
 
   io.memReq.valid := state===storing_mem && !ShiftRegister(last_row && last_column, 1)
-  io.memReq.bits.addr := addr + (row_counter*col + col_counter)*4.U
+  io.memReq.bits.addr := addr + (row_counter*col + col_counter)*(d_n/8).U
   io.memReq.bits.tag := row_counter*col + col_counter
   io.memReq.bits.cmd := M_XWR // perform a load (M_XWR for stores)
-  io.memReq.bits.size := log2Ceil(4).U
+  io.memReq.bits.size := log2Ceil(d_n/8).U
   io.memReq.bits.signed := false.B
   io.memReq.bits.data := io.regbank.out.bits.data
   io.memReq.bits.phys := false.B
@@ -67,8 +67,8 @@ class StoreController(val dim: Int, val d_n:Int, val a_w: Width)(implicit p: Par
 
 //  col_counter := Mux(io.memReq.fire(), Mux(last_column, 0.U, col_counter+1.U), col_counter)
 //  row_counter := Mux(last_column && io.memReq.fire(), Mux(last_row, 0.U, row_counter+1.U), row_counter)
-  col_counter := Mux(io.memResp.fire(), Mux(last_column, 0.U, col_counter+1.U), col_counter)
-  row_counter := Mux(last_column && io.memResp.fire(), row_counter+1.U, row_counter)
+  col_counter := Mux(io.memReq.fire(), Mux(last_column, 0.U, col_counter+1.U), col_counter)
+  row_counter := Mux(last_column && io.memReq.fire(), row_counter+1.U, row_counter)
   when(last_row && last_column){
     row_counter := 0.U
   }

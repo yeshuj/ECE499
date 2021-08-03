@@ -4,17 +4,17 @@ import scala.util
 import Chisel.ShiftRegister
 import chisel3._
 
-class macBundle() extends Bundle {
+class macBundle(val d_n: Int) extends Bundle {
   val init          = Input(Bool())
-  val a          = Input(UInt(16.W))
-  val b          = Input(UInt(16.W))
+  val a          = Input(UInt(d_n.W))
+  val b          = Input(UInt(d_n.W))
   val out_init          = Output(Bool())
-  val out_a         = Output(UInt(16.W))
-  val out_b         = Output(UInt(16.W))
-  val out_Data    = Output(UInt(32.W))
+  val out_a         = Output(UInt(d_n.W))
+  val out_b         = Output(UInt(d_n.W))
+  val out_Data    = Output(UInt(d_n.W))
   val out_Valid   = Output(Bool())
 
-  val in_Data = Input(UInt(32.W))
+  val in_Data = Input(UInt(d_n.W))
   val in_Valid = Input(Bool())
 }
 
@@ -23,11 +23,11 @@ class macBundle() extends Bundle {
  * Subtracts the smaller from the larger until register y is zero.
  * value in register x is then the GCD
  */
-class mac() extends Module {
-  val io = IO(new macBundle())
+class mac(val d_n: Int) extends Module {
+  val io = IO(new macBundle(d_n))
 
-  val acc = RegInit(0.U(64.W))
-  val out_data = RegInit(0.U(64.W))
+  val acc = RegInit(0.U(d_n.W))
+  val out_data = RegInit(0.U(d_n.W))
   val out_val = RegInit(false.B)
   io.out_a := ShiftRegister(io.a, 1)
   io.out_b := ShiftRegister(io.b, 1)

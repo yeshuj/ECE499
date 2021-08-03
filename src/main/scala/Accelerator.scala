@@ -10,12 +10,12 @@ import freechips.rocketchip.tilelink._
 import systolic._
 
 
-class Accelerator(opcodes: OpcodeSet, val n: Int = 4)
+class Accelerator(opcodes: OpcodeSet, val n: Int = 4, val dwidth: Int=64)
                        (implicit p: Parameters) extends LazyRoCC(opcodes) {
-  override lazy val module = new AcceleratorModule(this, n)
+  override lazy val module = new AcceleratorModule(this, n, dwidth)
 }
 
-class AcceleratorModule(outer: Accelerator, dim: Int)
+class AcceleratorModule(outer: Accelerator, dim: Int, dwidth: Int)
   extends LazyRoCCModuleImp(outer) {
   val busy = RegInit(VecInit(Seq.fill(outer.n){false.B}))
   val cmd = Queue(io.cmd)
@@ -55,16 +55,16 @@ class AcceleratorModule(outer: Accelerator, dim: Int)
   val bank_num = RegInit(0.U(num_reg.W))
   val res_bank = RegInit(0.U(num_reg.W))
 
-  val load_ctrl = Module(new LoadController(dim, 32, num_reg, 64.W))
-  val exec_ctrl = Module(new ExecuteController(dim, 32, num_reg, 64.W))
-  val str_ctrl = Module(new StoreController(dim, 32, 64.W))
+  val load_ctrl = Module(new LoadController(dim, dwidth, num_reg, 64.W))
+  val exec_ctrl = Module(new ExecuteController(dim, dwidth, num_reg, 64.W))
+  val str_ctrl = Module(new StoreController(dim, dwidth, 64.W))
   val reg_bank_seq = (for (i <- 0 until num_reg)  yield Module(new RegBank(dim, 64)))
   val reg_bank = VecInit(reg_bank_seq.map(_.io))
 //  val out_reg = Module(new OutRegBank(dim, 32))
-  val systolic = Module(new systolic_d(dim, 32))
+  val systolic = Module(new systolic_d(dim, dwidth))
   val regbankrow = RegInit(VecInit(Seq.fill(num_reg)(0.U(dim.W)))) // TODO: log2up(dim)
   val regbankcol = RegInit(VecInit(Seq.fill(num_reg)(0.U(dim.W))))
-  val transpose_reg = Module(new TransposeReg(dim, 32))
+  val transpose_reg = Module(new TransposeReg(dim, dwidth))
 
   //load instructions
   load_ctrl.io.cmd.valid := (state===start_load)
@@ -214,7 +214,7 @@ class AcceleratorModule(outer: Accelerator, dim: Int)
 //  io.resp.bits.data := accum
 //  // Semantics is to always send out prior accumulator register value
 //
-  io.busy := state =/= waiting_for_command && state =/= compute
+  io.busy := state =/= waiting_for_command || cmd.valid
 //  // Be busy when have pending memory requests or committed possibility of pending requests
 //  io.interrupt := false.B
   // Set this true to trigger an interrupt on the processor (please refer to supervisor documentation)
