@@ -32,19 +32,20 @@ class systolic_d(val dim: Int, val d_n: Int) extends Module {
   for (i <- 0 until dim; j <- 0 until dim) {
     if (i != 0) {
       sysArr(i)(j).b := sysArr(i - 1)(j).out_b
-      sysArr(i)(j).in_Data := sysArr(i-1)(j).out_Data
-      sysArr(i)(j).in_Valid := sysArr(i-1)(j).out_Valid
+
     } else {
       sysArr(i)(j).b := ShiftRegister(io.in_B.data(j), j)
-      sysArr(i)(j).in_Data := 0.U
-      sysArr(i)(j).in_Valid := false.B
     }
 
     if (j != 0) {
       sysArr(i)(j).a := sysArr(i)(j - 1).out_a
       sysArr(i)(j).init := sysArr(i)(j - 1).out_init
+      sysArr(i)(j).in_Data := sysArr(i)(j-1).out_Data
+      sysArr(i)(j).in_Valid := sysArr(i)(j-1).out_Valid
     } else {
       sysArr(i)(j).a := ShiftRegister(io.in_A.data(i), i)
+      sysArr(i)(j).in_Data := 0.U
+      sysArr(i)(j).in_Valid := false.B
       if(i != 0) {
         sysArr(i)(j).init := sysArr(i - 1)(j).out_init
       } else {
@@ -54,10 +55,10 @@ class systolic_d(val dim: Int, val d_n: Int) extends Module {
     }
   }
   for (i <- 0 until dim){
-    io.out.bits.data(i) := ShiftRegister(sysArr(dim-1)(i).out_Data, dim-1-i)
+    io.out.bits.data(i) := ShiftRegister(sysArr(i)(dim-1).out_Data, dim-1-i)
   }
   val counter = Counter(Range(0, dim, 1), sysArr(dim-1)(dim-1).out_Valid)
-  io.out.bits.row := counter._1
+  io.out.bits.col := dim.U-counter._1-1.U
   io.out.bits.write := true.B
 //  io.out.bits.data := VecInit((for (i <- 0 until dim) yield sysArr(i)(dim-1).out_Data))
   io.out.valid := sysArr(dim-1)(dim-1).out_Valid

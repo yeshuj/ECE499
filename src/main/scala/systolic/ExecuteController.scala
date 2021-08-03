@@ -18,13 +18,13 @@ class ExecuteController(val dim: Int, val d_n:Int, val numbank: Int, val a_w: Wi
   })
   val waiting_for_command :: transpose :: exec :: Nil = Enum(3)
   val state = RegInit(waiting_for_command)
-  io.complete := state === waiting_for_command
+  io.complete := ShiftRegister(io.startExec, 5*dim)
   val counter = Counter(Range(0, dim, 1), state =/= waiting_for_command)
 
   io.regbankreq.valid := state === exec
   io.regbankreqTrans.valid := state === transpose
-  io.regbankreq.bits.row := counter._1
-  io.regbankreqTrans.bits.row := counter._1
+  io.regbankreq.bits.col := counter._1
+  io.regbankreqTrans.bits.col := counter._1
   io.regbankreq.bits.data := VecInit(Seq.fill(dim)(0.U(d_n.W)))
   io.regbankreqTrans.bits.data := VecInit(Seq.fill(dim)(0.U(d_n.W)))
   io.regbankreq.bits.write := false.B

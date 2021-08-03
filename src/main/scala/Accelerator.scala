@@ -33,7 +33,7 @@ class AcceleratorModule(outer: Accelerator, dim: Int)
   // rs2 - the value of source register 2
   val num_reg = 2
 
-  val waiting_for_command :: start_load :: loading :: transpose :: compute :: store_data :: Nil = Enum(6)
+  val waiting_for_command :: start_load :: loading :: compute :: start_store :: store_data :: Nil = Enum(6)
   val state = RegInit(waiting_for_command)
 
   cmd.ready := (state===waiting_for_command)
@@ -66,26 +66,27 @@ class AcceleratorModule(outer: Accelerator, dim: Int)
   val regbankcol = RegInit(VecInit(Seq.fill(num_reg)(0.U(dim.W))))
   val transpose_reg = Module(new TransposeReg(dim, 32))
 
+  //load instructions
   load_ctrl.io.cmd.valid := (state===start_load)
   load_ctrl.io.cmd.bits.row := regbankrow(bank_num)
   load_ctrl.io.cmd.bits.col := regbankcol(bank_num)
   load_ctrl.io.cmd.bits.address := baseAddress
 
+  //execute instruction
   exec_ctrl.io.startExec := (state===compute)
-
   for(i<- 0 until num_reg){
-    when(i.U===bank_num_0){
-      reg_bank(i).sys.cmd.bits := exec_ctrl.io.regbankreq.bits
-      reg_bank(i).sys.cmd.valid := exec_ctrl.io.regbankreq.valid
-    }.otherwise{
-      reg_bank(i).sys.cmd.bits := exec_ctrl.io.regbankreqTrans.bits
-      reg_bank(i).sys.cmd.valid := exec_ctrl.io.regbankreqTrans.valid
-    }
+    reg_bank(i).sys.cmd.bits := exec_ctrl.io.regbankreqTrans.bits
+    reg_bank(i).sys.cmd.valid := exec_ctrl.io.regbankreqTrans.valid
     reg_bank(i).mem.cmd.bits := Mux(state===loading, load_ctrl.io.regbank.bits, str_ctrl.io.regbank.cmd.bits)
     reg_bank(i).mem.cmd.valid := Mux(i.U===bank_num, load_ctrl.io.regbank.valid || str_ctrl.io.regbank.cmd.valid, false.B)
-    reg_bank(i).sys.cmd.bits := systolic.io.out.bits
-    reg_bank(i).sys.cmd.valid := Mux(i.U===res_bank, systolic.io.out.valid, false.B)
+
 //    reg_bank(i).read.req <> Mux(i.U===bank_num, exec_ctrl.io.regbankreqTrans, exec_ctrl.io.regbankreq)
+  }
+  reg_bank(bank_num_0).sys.cmd.bits := exec_ctrl.io.regbankreq.bits
+  reg_bank(bank_num_0).sys.cmd.valid := exec_ctrl.io.regbankreq.valid
+  when(systolic.io.out.valid) {
+    reg_bank(res_bank).sys.cmd.bits := systolic.io.out.bits
+    reg_bank(res_bank).sys.cmd.valid := systolic.io.out.valid && state===compute
   }
 
   transpose_reg.io.load := reg_bank(bank_num).sys.out
@@ -96,11 +97,11 @@ class AcceleratorModule(outer: Accelerator, dim: Int)
 
 //  out_reg.io.load <> systolic.io.out
 
-  str_ctrl.io.cmd.valid := state === store_data
+  str_ctrl.io.cmd.valid := state === start_store
   str_ctrl.io.cmd.bits.col := regbankcol(bank_num)
   str_ctrl.io.cmd.bits.row := regbankrow(bank_num)
   str_ctrl.io.cmd.bits.address := baseAddress
-  str_ctrl.io.regbank.out <> reg_bank(bank_num).mem.out
+  reg_bank(bank_num).mem.out <> str_ctrl.io.regbank.out
 //  out_reg.io.read<>str_ctrl.io.outreg
 
   when(state === loading){
@@ -110,18 +111,10 @@ class AcceleratorModule(outer: Accelerator, dim: Int)
   }
   io.mem.req.valid := load_ctrl.io.memReq.valid || str_ctrl.io.memReq.valid
   load_ctrl.io.memReq.ready := io.mem.req.ready && state === loading
-  str_ctrl.io.memReq.ready := io.mem.req.ready && state === loading
+  str_ctrl.io.memReq.ready := io.mem.req.ready && state === store_data
 
   load_ctrl.io.memResp <> io.mem.resp
   str_ctrl.io.memResp <> io.mem.resp
-
-//  when(state === loading){
-//    io.mem.req.bits <> load_ctrl.io.memReq.bits
-//  }.otherwise {
-//    io.mem.req.bits := str_ctrl.io.memReq.bits
-//  }
-//  io.mem.req.valid := load_ctrl.io.memReq.valid || str_ctrl.io.memReq.valid
-//  load_ctrl.io.memReq.ready :=
 
 
   cmd.ready := (state === waiting_for_command)
@@ -152,7 +145,7 @@ class AcceleratorModule(outer: Accelerator, dim: Int)
         }.elsewhen(calc) {
           state := compute
         }.elsewhen(store){
-          state := store_data
+          state := start_store
         }.otherwise{
           state := state
         }
@@ -176,6 +169,12 @@ class AcceleratorModule(outer: Accelerator, dim: Int)
 //      when(!(exec_ctrl.io.regbankreq.fire() || exec_ctrl.io.regbankreqTrans.fire() || systolic.io.out.fire())){
 //        state := waiting_for_command //TODO
 //      }
+    }
+    is(start_store) {
+      state := Mux(str_ctrl.io.cmd.fire(), store_data, state)
+      //      when(load_ctrl.io.cmd.fire()) {
+      //        state := loading
+      //      }
     }
     is(store_data) {
       state := Mux(str_ctrl.io.complete, waiting_for_command, state)
@@ -215,7 +214,7 @@ class AcceleratorModule(outer: Accelerator, dim: Int)
 //  io.resp.bits.data := accum
 //  // Semantics is to always send out prior accumulator register value
 //
-//  io.busy := state =/= waiting_for_command
+  io.busy := state =/= waiting_for_command && state =/= compute
 //  // Be busy when have pending memory requests or committed possibility of pending requests
 //  io.interrupt := false.B
   // Set this true to trigger an interrupt on the processor (please refer to supervisor documentation)
@@ -225,7 +224,6 @@ class AcceleratorModule(outer: Accelerator, dim: Int)
 //  io.mem.req.bits.addr := addend
 //  io.mem.req.bits.tag := addr
 //  io.mem.req.bits.cmd := M_XRD // perform a load (M_XWR for stores)
-//  io.mem.req.bits.size := log2Ceil(8).U
 //  io.mem.req.bits.signed := false.B
 //  io.mem.req.bits.data := 0.U // we're not performing any stores...
 //  io.mem.req.bits.phys := false.B

@@ -12,11 +12,14 @@ class TransposeReg(val dim: Int, val d_n: Int) extends Module {
   val mem = Reg(Vec(dim, Vec(dim, UInt(d_n.W))))
 
   when(io.load.fire()){
-    for(i <- 0 until dim){
-      mem(i)(io.load.bits.row) := io.load.bits.data(i)
-    }
+//    for(i <- 0 until dim){
+      mem(io.load.bits.col) := io.load.bits.data
+//    }
   }
   io.sys.out.valid := io.sys.cmd.fire() && !io.sys.cmd.bits.write
-  io.sys.out.bits.row := io.sys.cmd.bits.row
-  io.sys.out.bits.data := mem(io.sys.cmd.bits.row)
+  io.sys.out.bits.col := io.sys.cmd.bits.col
+//  io.sys.out.bits.data := mem(io.sys.cmd.bits.col)
+  for(i <- 0 until dim){
+    io.sys.out.bits.data(i) := mem(i)(io.sys.cmd.bits.col)
+  }
 }
