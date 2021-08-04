@@ -10,14 +10,14 @@ import freechips.rocketchip.tilelink._
 import systolic._
 
 
-class Accelerator(opcodes: OpcodeSet, val n: Int = 4, val dwidth: Int=64)
+class Accelerator(opcodes: OpcodeSet, val dim: Int = 4, val dwidth: Int=64, val numbanks: Int = 4)
                        (implicit p: Parameters) extends LazyRoCC(opcodes) {
-  override lazy val module = new AcceleratorModule(this, n, dwidth)
+  override lazy val module = new AcceleratorModule(this)
 }
 
-class AcceleratorModule(outer: Accelerator, dim: Int, dwidth: Int)
+class AcceleratorModule(outer: Accelerator)
   extends LazyRoCCModuleImp(outer) {
-  val busy = RegInit(VecInit(Seq.fill(outer.n){false.B}))
+//  val busy = RegInit(VecInit(Seq.fill(outer.n){false.B}))
   val cmd = Queue(io.cmd)
   // The parts of the command are as follows
   // inst - the parts of the instruction itself
@@ -38,33 +38,33 @@ class AcceleratorModule(outer: Accelerator, dim: Int, dwidth: Int)
 
   cmd.ready := (state===waiting_for_command)
   val funct = cmd.bits.inst.funct
-  val addr = cmd.bits.rs1(log2Up(outer.n)-1,0)
+//  val addr = cmd.bits.rs1(log2Up(outer.dim)-1,0)
   val set = funct === 0.U && cmd.fire()
 //  val set_j = funct === 1.U
 //  val set_k = funct === 2.U
   val load = funct === 1.U && cmd.fire()
   val calc = funct === 2.U && cmd.fire()
   val store = funct === 3.U && cmd.fire()
-  val memRespTag = io.mem.resp.bits.tag(log2Up(outer.n)-1,0)
-  val dimI = RegInit(dim.U)
-  val dimJ = RegInit(dim.U)
-  val dimK = RegInit(dim.U)
+//  val memRespTag = io.mem.resp.bits.tag(log2Up(outer.dim)-1,0)
+  val dimI = RegInit(outer.dim.U)
+  val dimJ = RegInit(outer.dim.U)
+  val dimK = RegInit(outer.dim.U)
 //  val isA = RegInit(true.B)
   val baseAddress = RegInit(0.U(64.W))
-  val bank_num_0 = RegInit(0.U(num_reg.W))
-  val bank_num = RegInit(0.U(num_reg.W))
-  val res_bank = RegInit(0.U(num_reg.W))
+  val bank_num_0 = RegInit(0.U(outer.numbanks.W))
+  val bank_num = RegInit(0.U(outer.numbanks.W))
+  val res_bank = RegInit(0.U(outer.numbanks.W))
 
-  val load_ctrl = Module(new LoadController(dim, dwidth, num_reg, 64.W))
-  val exec_ctrl = Module(new ExecuteController(dim, dwidth, num_reg, 64.W))
-  val str_ctrl = Module(new StoreController(dim, dwidth, 64.W))
-  val reg_bank_seq = (for (i <- 0 until num_reg)  yield Module(new RegBank(dim, 64)))
+  val load_ctrl = Module(new LoadController(outer.dim, outer.dwidth, outer.numbanks, 64.W))
+  val exec_ctrl = Module(new ExecuteController(outer.dim, outer.dwidth, outer.numbanks, 64.W))
+  val str_ctrl = Module(new StoreController(outer.dim, outer.dwidth, 64.W))
+  val reg_bank_seq = (for (i <- 0 until outer.numbanks)  yield Module(new RegBank(outer.dim, 64)))
   val reg_bank = VecInit(reg_bank_seq.map(_.io))
 //  val out_reg = Module(new OutRegBank(dim, 32))
-  val systolic = Module(new systolic_d(dim, dwidth))
-  val regbankrow = RegInit(VecInit(Seq.fill(num_reg)(0.U(dim.W)))) // TODO: log2up(dim)
-  val regbankcol = RegInit(VecInit(Seq.fill(num_reg)(0.U(dim.W))))
-  val transpose_reg = Module(new TransposeReg(dim, dwidth))
+  val systolic = Module(new systolic_d(outer.dim, outer.dwidth))
+  val regbankrow = RegInit(VecInit(Seq.fill(outer.numbanks)(0.U(outer.dim.W)))) // TODO: log2up(dim)
+  val regbankcol = RegInit(VecInit(Seq.fill(outer.numbanks)(0.U(outer.dim.W))))
+  val transpose_reg = Module(new TransposeReg(outer.dim, outer.dwidth))
 
   //load instructions
   load_ctrl.io.cmd.valid := (state===start_load)
@@ -74,7 +74,7 @@ class AcceleratorModule(outer: Accelerator, dim: Int, dwidth: Int)
 
   //execute instruction
   exec_ctrl.io.startExec := (state===compute)
-  for(i<- 0 until num_reg){
+  for(i<- 0 until outer.numbanks){
     reg_bank(i).sys.cmd.bits := exec_ctrl.io.regbankreqTrans.bits
     reg_bank(i).sys.cmd.valid := exec_ctrl.io.regbankreqTrans.valid
     reg_bank(i).mem.cmd.bits := Mux(state===loading, load_ctrl.io.regbank.bits, str_ctrl.io.regbank.cmd.bits)
@@ -119,8 +119,8 @@ class AcceleratorModule(outer: Accelerator, dim: Int, dwidth: Int)
 
   cmd.ready := (state === waiting_for_command)
   when(set){
-    regbankrow(cmd.bits.inst.rd) := cmd.bits.rs1(num_reg, 0)
-    regbankcol(cmd.bits.inst.rd) := cmd.bits.rs2(num_reg, 0)
+    regbankrow(cmd.bits.inst.rd) := cmd.bits.rs1(outer.numbanks, 0)
+    regbankcol(cmd.bits.inst.rd) := cmd.bits.rs2(outer.numbanks, 0)
   }
 //  when(set_j){
 //    dimJ := cmd.bits.rs1
