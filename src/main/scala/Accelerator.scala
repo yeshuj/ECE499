@@ -10,12 +10,15 @@ import freechips.rocketchip.tilelink._
 import systolic._
 
 
-class Accelerator(opcodes: OpcodeSet, val dim: Int = 4, val dwidth: Int=64, val numbanks: Int = 4)
+class Accelerator(opcodes: OpcodeSet, dim: Int, dwidth: Int, numbanks: Int)
                        (implicit p: Parameters) extends LazyRoCC(opcodes) {
-  override lazy val module = new AcceleratorModule(this)
+//  val dim=dim
+//  val dwidth=dwidth
+//  val numbanks=numbanks
+  override lazy val module = new AcceleratorModule(this, dim, dwidth, numbanks)
 }
 
-class AcceleratorModule(outer: Accelerator)
+class AcceleratorModule(outer: Accelerator, dim: Int, dwidth: Int, numbanks: Int)
   extends LazyRoCCModuleImp(outer) {
 //  val busy = RegInit(VecInit(Seq.fill(outer.n){false.B}))
   val cmd = Queue(io.cmd)
@@ -38,7 +41,7 @@ class AcceleratorModule(outer: Accelerator)
 
   cmd.ready := (state===waiting_for_command)
   val funct = cmd.bits.inst.funct
-//  val addr = cmd.bits.rs1(log2Up(outer.dim)-1,0)
+//  val addr = cmd.bits.rs1(log2Up(dim)-1,0)
   val set = funct === 0.U && cmd.fire()
 //  val set_j = funct === 1.U
 //  val set_k = funct === 2.U
@@ -46,26 +49,26 @@ class AcceleratorModule(outer: Accelerator)
   val calc = funct === 2.U && cmd.fire()
   val store = funct === 3.U && cmd.fire()
   val move = funct === 4.U && cmd.fire()
-//  val memRespTag = io.mem.resp.bits.tag(log2Up(outer.dim)-1,0)
-  val dimI = RegInit(outer.dim.U)
-  val dimJ = RegInit(outer.dim.U)
-  val dimK = RegInit(outer.dim.U)
+//  val memRespTag = io.mem.resp.bits.tag(log2Up(dim)-1,0)
+  val dimI = RegInit(dim.U)
+  val dimJ = RegInit(dim.U)
+  val dimK = RegInit(dim.U)
 //  val isA = RegInit(true.B)
   val baseAddress = RegInit(0.U(64.W))
-  val bank_num_0 = RegInit(0.U(outer.numbanks.W))
-  val bank_num = RegInit(0.U(outer.numbanks.W))
-  val res_bank = RegInit(0.U(outer.numbanks.W))
+  val bank_num_0 = RegInit(0.U(numbanks.W))
+  val bank_num = RegInit(0.U(numbanks.W))
+  val res_bank = RegInit(0.U(numbanks.W))
 
-  val load_ctrl = Module(new LoadController(outer.dim, outer.dwidth, outer.numbanks, 64.W))
-  val exec_ctrl = Module(new ExecuteController(outer.dim, outer.dwidth, outer.numbanks, 64.W))
-  val str_ctrl = Module(new StoreController(outer.dim, outer.dwidth, 64.W))
-  val reg_bank_seq = (for (i <- 0 until outer.numbanks)  yield Module(new RegBank(outer.dim, 64)))
+  val load_ctrl = Module(new LoadController(dim, dwidth, numbanks, 64.W))
+  val exec_ctrl = Module(new ExecuteController(dim, dwidth, numbanks, 64.W))
+  val str_ctrl = Module(new StoreController(dim, dwidth, 64.W))
+  val reg_bank_seq = (for (i <- 0 until numbanks)  yield Module(new RegBank(dim, 64)))
   val reg_bank = VecInit(reg_bank_seq.map(_.io))
 //  val out_reg = Module(new OutRegBank(dim, 32))
-  val systolic = Module(new systolic_d(outer.dim, outer.dwidth))
-  val regbankrow = RegInit(VecInit(Seq.fill(outer.numbanks)(0.U(outer.dim.W)))) // TODO: log2up(dim)
-  val regbankcol = RegInit(VecInit(Seq.fill(outer.numbanks)(0.U(outer.dim.W))))
-  val transpose_reg = Module(new TransposeReg(outer.dim, outer.dwidth))
+  val systolic = Module(new systolic_d(dim, dwidth))
+  val regbankrow = RegInit(VecInit(Seq.fill(numbanks)(0.U(dim.W)))) // TODO: log2up(dim)
+  val regbankcol = RegInit(VecInit(Seq.fill(numbanks)(0.U(dim.W))))
+  val transpose_reg = Module(new TransposeReg(dim, dwidth))
 
   //load instructions
   load_ctrl.io.cmd.valid := (state===start_load)
@@ -75,7 +78,7 @@ class AcceleratorModule(outer: Accelerator)
 
   //execute instruction
   exec_ctrl.io.startExec := cmd.fire() && calc && state === waiting_for_command
-  for(i<- 0 until outer.numbanks){
+  for(i<- 0 until numbanks){
     reg_bank(i).sys.cmd.bits := exec_ctrl.io.regbankreqTrans.bits
     reg_bank(i).sys.cmd.valid := exec_ctrl.io.regbankreqTrans.valid
     reg_bank(i).mem.cmd.bits := Mux(state===loading, load_ctrl.io.regbank.bits, str_ctrl.io.regbank.cmd.bits)
@@ -121,8 +124,8 @@ class AcceleratorModule(outer: Accelerator)
 
   cmd.ready := (state === waiting_for_command)
   when(set){
-    regbankrow(cmd.bits.inst.rd) := cmd.bits.rs1(outer.numbanks, 0)
-    regbankcol(cmd.bits.inst.rd) := cmd.bits.rs2(outer.numbanks, 0)
+    regbankrow(cmd.bits.inst.rd) := cmd.bits.rs1(numbanks, 0)
+    regbankcol(cmd.bits.inst.rd) := cmd.bits.rs2(numbanks, 0)
   }
 //  when(set_j){
 //    dimJ := cmd.bits.rs1
@@ -243,7 +246,7 @@ class AcceleratorModule(outer: Accelerator)
 
 }
 
-class WithAccel extends Config ((site, here, up) => {
+class WithAccel(dim: Int = 10, dwidth: Int = 64, numbanks: Int = 10) extends Config ((site, here, up) => {
 //  case Sha3WidthP => 64
 //  case Sha3Stages => 1
 //  case Sha3FastMem => true
@@ -253,8 +256,8 @@ class WithAccel extends Config ((site, here, up) => {
 //  case Sha3TLB => Some(TLBConfig(nSets = 1, nWays = 4, nSectors = 1, nSuperpageEntries = 1))
   case BuildRoCC => up(BuildRoCC) ++ Seq(
     (p: Parameters) => {
-      val sha3 = LazyModule.apply(new Accelerator(OpcodeSet.custom2)(p))
-      sha3
+      val matmul = LazyModule.apply(new Accelerator(OpcodeSet.custom2, dim=dim, dwidth=dwidth, numbanks=numbanks)(p))
+      matmul
     }
   )
 })
