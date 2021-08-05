@@ -20,13 +20,14 @@ class systolic_d(val dim: Int, val d_n: Int) extends Module {
 
   val io = IO(new Bundle(){
     val calc           = Input(Bool())
+    val store         = Input(Bool())
     val in_A          = Input(new RegBankSysResp(dim, d_n))
     val in_B          = Input(new RegBankSysResp(dim, d_n))
     val out           = Valid(new RegBankSysReq(dim, d_n))
   })
-  val calc_r = RegInit(0.U)
-  calc_r := io.calc
-  val init = calc_r ^ io.calc
+//  val calc_r = RegInit(0.U)
+//  calc_r := io.calc
+//  val init = calc_r ^ io.calc
 //  val io = IO(new systolicBundle(2))
   val sysArr = (for (i <- 0 until dim) yield ((for (j <- 0 until dim) yield Module(new mac(d_n)).io)))
   for (i <- 0 until dim; j <- 0 until dim) {
@@ -39,7 +40,8 @@ class systolic_d(val dim: Int, val d_n: Int) extends Module {
 
     if (j != 0) {
       sysArr(i)(j).a := sysArr(i)(j - 1).out_a
-      sysArr(i)(j).init := sysArr(i)(j - 1).out_init
+      sysArr(i)(j).move := sysArr(i)(j - 1).out_init
+      sysArr(i)(j).calc := sysArr(i)(j - 1).out_calc
       sysArr(i)(j).in_Data := sysArr(i)(j-1).out_Data
       sysArr(i)(j).in_Valid := sysArr(i)(j-1).out_Valid
     } else {
@@ -47,9 +49,11 @@ class systolic_d(val dim: Int, val d_n: Int) extends Module {
       sysArr(i)(j).in_Data := 0.U
       sysArr(i)(j).in_Valid := false.B
       if(i != 0) {
-        sysArr(i)(j).init := sysArr(i - 1)(j).out_init
+        sysArr(i)(j).move := sysArr(i - 1)(j).out_init
+        sysArr(i)(j).calc := sysArr(i - 1)(j).out_calc
       } else {
-        sysArr(i)(j).init := init
+        sysArr(i)(j).move := io.store
+        sysArr(i)(j).calc := io.calc
       }
 //        sysArr(i)(j).left_bub := 0.B
     }

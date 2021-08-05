@@ -33,7 +33,7 @@ class AcceleratorModule(outer: Accelerator)
   // rs2 - the value of source register 2
   val num_reg = 2
 
-  val waiting_for_command :: start_load :: loading :: compute :: start_store :: store_data :: Nil = Enum(6)
+  val waiting_for_command :: start_load :: loading :: compute :: move_out:: start_store :: store_data :: Nil = Enum(7)
   val state = RegInit(waiting_for_command)
 
   cmd.ready := (state===waiting_for_command)
@@ -45,6 +45,7 @@ class AcceleratorModule(outer: Accelerator)
   val load = funct === 1.U && cmd.fire()
   val calc = funct === 2.U && cmd.fire()
   val store = funct === 3.U && cmd.fire()
+  val move = funct === 4.U && cmd.fire()
 //  val memRespTag = io.mem.resp.bits.tag(log2Up(outer.dim)-1,0)
   val dimI = RegInit(outer.dim.U)
   val dimJ = RegInit(outer.dim.U)
@@ -73,7 +74,7 @@ class AcceleratorModule(outer: Accelerator)
   load_ctrl.io.cmd.bits.address := baseAddress
 
   //execute instruction
-  exec_ctrl.io.startExec := (state===compute)
+  exec_ctrl.io.startExec := cmd.fire() && calc && state === waiting_for_command
   for(i<- 0 until outer.numbanks){
     reg_bank(i).sys.cmd.bits := exec_ctrl.io.regbankreqTrans.bits
     reg_bank(i).sys.cmd.valid := exec_ctrl.io.regbankreqTrans.valid
@@ -86,7 +87,7 @@ class AcceleratorModule(outer: Accelerator)
   reg_bank(bank_num_0).sys.cmd.valid := exec_ctrl.io.regbankreq.valid
   when(systolic.io.out.valid) {
     reg_bank(res_bank).sys.cmd.bits := systolic.io.out.bits
-    reg_bank(res_bank).sys.cmd.valid := systolic.io.out.valid && state===compute
+    reg_bank(res_bank).sys.cmd.valid := systolic.io.out.valid && state===move_out
   }
 
   transpose_reg.io.load := reg_bank(bank_num).sys.out
@@ -94,6 +95,7 @@ class AcceleratorModule(outer: Accelerator)
   systolic.io.in_A := reg_bank(bank_num_0).sys.out.bits
   systolic.io.in_B := transpose_reg.io.sys.out.bits
   systolic.io.calc := exec_ctrl.io.regbankreq.valid
+  systolic.io.store := cmd.fire() && move && (state === waiting_for_command)
 
 //  out_reg.io.load <> systolic.io.out
 
@@ -146,7 +148,9 @@ class AcceleratorModule(outer: Accelerator)
           state := compute
         }.elsewhen(store){
           state := start_store
-        }.otherwise{
+        }.elsewhen(move) {
+          state := move_out
+        }.otherwise {
           state := state
         }
       }
@@ -169,6 +173,9 @@ class AcceleratorModule(outer: Accelerator)
 //      when(!(exec_ctrl.io.regbankreq.fire() || exec_ctrl.io.regbankreqTrans.fire() || systolic.io.out.fire())){
 //        state := waiting_for_command //TODO
 //      }
+    }
+    is(move_out){
+      state := Mux(systolic.io.out.valid && systolic.io.out.bits.col===0.U, waiting_for_command, state)
     }
     is(start_store) {
       state := Mux(str_ctrl.io.cmd.fire(), store_data, state)
