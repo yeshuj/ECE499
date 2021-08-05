@@ -247,13 +247,6 @@ class AcceleratorModule(outer: Accelerator, dim: Int, dwidth: Int, numbanks: Int
 }
 
 class WithAccel(dim: Int = 10, dwidth: Int = 64, numbanks: Int = 10) extends Config ((site, here, up) => {
-//  case Sha3WidthP => 64
-//  case Sha3Stages => 1
-//  case Sha3FastMem => true
-//  case Sha3BufferSram => false
-//  case Sha3Keccak => false
-//  case Sha3BlackBox => false
-//  case Sha3TLB => Some(TLBConfig(nSets = 1, nWays = 4, nSectors = 1, nSuperpageEntries = 1))
   case BuildRoCC => up(BuildRoCC) ++ Seq(
     (p: Parameters) => {
       val matmul = LazyModule.apply(new Accelerator(OpcodeSet.custom2, dim=dim, dwidth=dwidth, numbanks=numbanks)(p))
