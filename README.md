@@ -1,4 +1,4 @@
-# MATRIX MULTIPOLICATION ACCELERATOR
+# MATRIX MULTIPLICATION ACCELERATOR
 
 ## Simulation
 In order to simulate the accelerator, following steps must be followed:
@@ -18,3 +18,17 @@ git submodule add https://github.com/yeshuj/ECE499.git
 make -j8 CONFIG=Tutorial499Config run-binary-debug BINARY=../../tests/matmul.riscv
 ```
 
+## Using Docker
+1. To run the simulation using docker, it the root directory, run the following command to build the container:
+```
+docker build .
+```
+2. Enter the container using the command:
+```
+docker run -it <image tag>
+```
+3. In the container, run:
+```
+./test.sh
+```
+This script runs the tests in matmul.c
